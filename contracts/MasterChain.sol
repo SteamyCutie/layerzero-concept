@@ -10,7 +10,7 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
-contract MasterNetwork is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig, IPOCDeployment {
+contract MasterChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig, IPOCDeployment {
     using SafeMath for uint;
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;

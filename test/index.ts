@@ -67,8 +67,8 @@ describe("LayerZero Concept", function () {
   });
 
   it("modify the counter of the destination SatelliteChain", async function () {
-    expect(await this.satelliteChain1Id.getCounter()).to.be.equal(0);
-    expect(await this.satelliteChain2Id.getCounter()).to.be.equal(0);
+    expect(await this.satelliteChain1.getCounter()).to.be.equal(0);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(0);
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
@@ -83,8 +83,8 @@ describe("LayerZero Concept", function () {
       "SUB"
     );
 
-    expect(await this.satelliteChain1Id.getCounter()).to.be.equal(10);
-    expect(await this.satelliteChain2Id.getCounter()).to.be.equal(-5);
+    expect(await this.satelliteChain1.getCounter()).to.be.equal(10);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(-5);
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
@@ -99,7 +99,7 @@ describe("LayerZero Concept", function () {
       "ADD"
     );
 
-    expect(await this.satelliteChain1Id.getCounter()).to.be.equal(50);
-    expect(await this.satelliteChain2Id.getCounter()).to.be.equal(5);
+    expect(await this.satelliteChain1.getCounter()).to.be.equal(50);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(5);
   });
 });
