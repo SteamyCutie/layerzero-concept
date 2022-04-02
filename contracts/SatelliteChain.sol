@@ -8,21 +8,39 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/ILayerZeroReceiver.sol";
 import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
+import "./interfaces/IPOCDeployment.sol";
 
-contract MasterNetwork is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
+contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
     using SafeMath for uint;
     // keep track of how many messages have been received from other chains
-    uint public messageCounter;
+    uint public counter;
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
-    mapping(uint16 => bytes) public remotes;
+
+    uint16 remoteChainId;
+    bytes remoteAddress;
 
     constructor(address _endpoint) {
         endpoint = ILayerZeroEndpoint(_endpoint);
     }
 
     function getCounter() public view returns (uint) {
-        return messageCounter;
+        return counter;
+    }
+        
+    function sendCounter(uint16 _remoteChainId, bytes memory _remoteAddress) public payable {
+        endpoint.send{value: msg.value}(_remoteChainId, _remoteAddress, bytes(""), payable(msg.sender), address(0x0), abi.encodePacked(counter));
+    }
+
+    function bytesToUint(bytes memory b) public pure returns (uint256){
+        uint256 number;
+        for(uint i = 0; i < b.length; i ++)
+            number = number + uint8(b[i]);
+        return number;
+    }
+
+    function requestCounter(uint16 _chainId, bytes memory _dstAddress) external payable {
+        endpoint.send{value: msg.value}(_chainId, _dstAddress, bytes(""), payable(msg.sender), address(0x0), bytes("COUNTER"));
     }
 
     // overrides lzReceive function in ILayerZeroReceiver.
@@ -31,69 +49,20 @@ contract MasterNetwork is Ownable, ILayerZeroReceiver, ILayerZeroUserApplication
         uint16 _srcChainId,
         bytes memory _srcAddress,
         uint64, /*_nonce*/
-        bytes memory /*_payload*/
+        bytes memory _payload
     ) external override {
         // boilerplate: only allow this endpiont to be the caller of lzReceive!
         require(msg.sender == address(endpoint));
         // owner must have setRemote() to allow its remote contracts to send to this contract
         require(
-            _srcAddress.length == remotes[_srcChainId].length && keccak256(_srcAddress) == keccak256(remotes[_srcChainId]),
+            _srcChainId == remoteChainId && _srcAddress.length == remoteAddress.length && keccak256(_srcAddress) == keccak256(remoteAddress),
             "Invalid remote sender address. owner should call setRemote() to enable remote contract"
         );
-
-        messageCounter += 1;
-    }
-
-    // custom function that wraps endpoint.send(...) which will
-    // cause lzReceive() to be called on the destination chain!
-    function incrementCounter(uint16 _dstChainId, bytes calldata _dstCounterMockAddress) public payable {
-        endpoint.send{value: msg.value}(_dstChainId, _dstCounterMockAddress, bytes(""), payable(msg.sender), address(0x0), bytes(""));
-    }
-
-    // _adapterParams (v1)
-    // customize the gas amount to be used on the destination chain.
-    function incrementCounterWithAdapterParamsV1(uint16 _dstChainId, bytes calldata _dstCounterMockAddress, uint gasAmountForDst) public payable {
-        uint16 version = 1;
-        // make look like this: 0x00010000000000000000000000000000000000000000000000000000000000030d40
-        bytes memory _adapterParams = abi.encodePacked(
-            version,
-            gasAmountForDst
-        );
-        endpoint.send{value: msg.value}(_dstChainId, _dstCounterMockAddress, bytes(""), payable(msg.sender), address(0x0), _adapterParams);
-    }
-
-    // _adapterParams (v2)
-    // specify a small amount of notive token you want to airdropped to your wallet on destination
-    function incrementCounterWithAdapterParamsV2(uint16 _dstChainId, bytes calldata _dstCounterMockAddress, uint gasAmountForDst, uint airdropEthQty, address airdropAddr) public payable {
-        uint16 version = 2;
-        bytes memory _adapterParams = abi.encodePacked(
-            version,
-            gasAmountForDst,
-            airdropEthQty,      // how must dust to receive on destination
-            airdropAddr         // the address to receive the dust
-        );
-        endpoint.send{value: msg.value}(_dstChainId, _dstCounterMockAddress, bytes(""), payable(msg.sender), address(0x0), _adapterParams);
-    }
-
-    // call send() to multiple destinations in the same transaction!
-    function incrementMultiCounter(uint16[] calldata _dstChainIds, bytes[] calldata _dstCounterMockAddresses, address payable _refundAddr) public payable {
-        require(_dstChainIds.length == _dstCounterMockAddresses.length, "_dstChainIds.length, _dstCounterMockAddresses.length not the same");
-
-        uint numberOfChains = _dstChainIds.length;
-
-        // note: could result in a few wei of dust left in contract
-        uint valueToSend = msg.value.div(numberOfChains);
-
-        // send() each chainId + dst address pair
-        for (uint i = 0; i < numberOfChains; ++i) {
-            // a Communicator.sol instance is the 'endpoint'
-            // .send() each payload to the destination chainId + UA destination address
-            endpoint.send{value: valueToSend}(_dstChainIds[i], _dstCounterMockAddresses[i], bytes(""), _refundAddr, address(0x0), bytes(""));
-        }
-
-        // refund eth if too much was sent into this contract call
-        uint refund = msg.value.sub(valueToSend.mul(numberOfChains));
-        _refundAddr.transfer(refund);
+        bytes memory expect = bytes("COUNTER");
+        if (_payload.length == expect.length && keccak256(_payload) == keccak256(expect))
+            sendCounter(remoteChainId, remoteAddress);
+        else
+            counter = bytesToUint(_payload);
     }
 
     function setConfig(
@@ -152,27 +121,28 @@ contract MasterNetwork is Ownable, ILayerZeroReceiver, ILayerZeroUserApplication
     // in lzReceive(), a require() ensures only messages
     // from known contracts can be received.
     function setRemote(uint16 _chainId, bytes calldata _remoteAddress) external onlyOwner {
-        require(remotes[_chainId].length == 0, "The remote address has already been set for the chainId!");
-        remotes[_chainId] = _remoteAddress;
+        require(remoteAddress.length == 0, "The remote address has already been set for the chainId!");
+        remoteChainId = _chainId;
+        remoteAddress = _remoteAddress;
     }
 
     // set the inbound block confirmations
-    function setInboundConfirmations(uint16 remoteChainId, uint16 confirmations) external {
+    function setInboundConfirmations(uint16 _remoteChainId, uint16 _confirmations) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
-            remoteChainId,
+            _remoteChainId,
             2, // CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS
-            abi.encode(confirmations)
+            abi.encode(_confirmations)
         );
     }
 
     // set outbound block confirmations
-    function setOutboundConfirmations(uint16 remoteChainId, uint16 confirmations) external {
+    function setOutboundConfirmations(uint16 _remoteChainId, uint16 _confirmations) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
-            remoteChainId,
+            _remoteChainId,
             5, // CONFIG_TYPE_OUTBOUND_BLOCK_CONFIRMATIONS
-            abi.encode(confirmations)
+            abi.encode(_confirmations)
         );
     }
 
