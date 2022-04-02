@@ -10,10 +10,16 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
-contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
-    using SafeMath for uint;
+import "hardhat/console.sol";
+
+contract SatelliteChain is
+    Ownable,
+    ILayerZeroReceiver,
+    ILayerZeroUserApplicationConfig
+{
+    using SafeMath for uint256;
     // keep track of how many messages have been received from other chains
-    uint public counter;
+    uint256 public counter;
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
 
@@ -24,23 +30,45 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
         endpoint = ILayerZeroEndpoint(_endpoint);
     }
 
-    function getCounter() public view returns (uint) {
+    function getCounter() public view returns (uint256) {
         return counter;
     }
-        
-    function sendCounter(uint16 _remoteChainId, bytes memory _remoteAddress) public payable {
-        endpoint.send{value: msg.value}(_remoteChainId, _remoteAddress, bytes(""), payable(msg.sender), address(0x0), abi.encodePacked(counter));
+
+    function sendCounter(uint16 _remoteChainId, bytes memory _remoteAddress)
+        public
+        payable
+    {
+        endpoint.send{value: msg.value}(
+            _remoteChainId,
+            _remoteAddress,
+            abi.encodePacked(counter),
+            payable(msg.sender),
+            address(0x0),
+            bytes("")
+        );
     }
 
-    function bytesToUint(bytes memory b) public pure returns (uint256){
-        uint256 number;
-        for(uint i = 0; i < b.length; i ++)
-            number = number + uint8(b[i]);
-        return number;
+    function requestCounter(uint16 _chainId, bytes memory _dstAddress)
+        external
+        payable
+    {
+        endpoint.send{value: msg.value}(
+            _chainId,
+            _dstAddress,
+            bytes(""),
+            payable(msg.sender),
+            address(0x0),
+            bytes("COUNTER")
+        );
     }
 
-    function requestCounter(uint16 _chainId, bytes memory _dstAddress) external payable {
-        endpoint.send{value: msg.value}(_chainId, _dstAddress, bytes(""), payable(msg.sender), address(0x0), bytes("COUNTER"));
+    function toUint256(bytes memory _bytes) internal pure returns (uint256) {
+        require(_bytes.length >= 32, "toUint256_outOfBounds");
+        uint256 tempUint;
+        assembly {
+            tempUint := mload(add(_bytes, 0x20))
+        }
+        return tempUint;
     }
 
     // overrides lzReceive function in ILayerZeroReceiver.
@@ -55,32 +83,49 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
         require(msg.sender == address(endpoint));
         // owner must have setRemote() to allow its remote contracts to send to this contract
         require(
-            _srcChainId == remoteChainId && _srcAddress.length == remoteAddress.length && keccak256(_srcAddress) == keccak256(remoteAddress),
+            _srcChainId == remoteChainId &&
+                _srcAddress.length == remoteAddress.length &&
+                keccak256(_srcAddress) == keccak256(remoteAddress),
             "Invalid remote sender address. owner should call setRemote() to enable remote contract"
         );
         bytes memory expect = bytes("COUNTER");
-        if (_payload.length == expect.length && keccak256(_payload) == keccak256(expect))
+        if (
+            _payload.length == expect.length &&
+            keccak256(_payload) == keccak256(expect)
+        ) sendCounter(remoteChainId, remoteAddress);
+        else {
+            counter = toUint256(_payload);
             sendCounter(remoteChainId, remoteAddress);
-        else
-            counter = bytesToUint(_payload);
+        }
     }
 
     function setConfig(
         uint16, /*_version*/
         uint16 _chainId,
-        uint _configType,
+        uint256 _configType,
         bytes calldata _config
     ) external override {
-        endpoint.setConfig(endpoint.getSendVersion(address(this)), _chainId, _configType, _config);
+        endpoint.setConfig(
+            endpoint.getSendVersion(address(this)),
+            _chainId,
+            _configType,
+            _config
+        );
     }
 
     function getConfig(
         uint16, /*_dstChainId*/
         uint16 _chainId,
         address,
-        uint _configType
+        uint256 _configType
     ) external view returns (bytes memory) {
-        return endpoint.getConfig(endpoint.getSendVersion(address(this)), _chainId, address(this), _configType);
+        return
+            endpoint.getConfig(
+                endpoint.getSendVersion(address(this)),
+                _chainId,
+                address(this),
+                _configType
+            );
     }
 
     function setSendVersion(uint16 version) external override {
@@ -99,13 +144,16 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
         return endpoint.getReceiveVersion(address(this));
     }
 
-    function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) external override {
+    function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
+        external
+        override
+    {
         //
     }
 
     // set the Oracle to be used by this UA for LayerZero messages
     function setOracle(uint16 dstChainId, address oracle) external {
-        uint TYPE_ORACLE = 6; // from UltraLightNode
+        uint256 TYPE_ORACLE = 6; // from UltraLightNode
         // set the Oracle
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
@@ -120,14 +168,23 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
     // the owner must set remote contract addresses.
     // in lzReceive(), a require() ensures only messages
     // from known contracts can be received.
-    function setRemote(uint16 _chainId, bytes calldata _remoteAddress) external onlyOwner {
-        require(remoteAddress.length == 0, "The remote address has already been set for the chainId!");
+    function setRemote(uint16 _chainId, bytes calldata _remoteAddress)
+        external
+        onlyOwner
+    {
+        require(
+            remoteAddress.length == 0,
+            "The remote address has already been set for the chainId!"
+        );
         remoteChainId = _chainId;
         remoteAddress = _remoteAddress;
     }
 
     // set the inbound block confirmations
-    function setInboundConfirmations(uint16 _remoteChainId, uint16 _confirmations) external {
+    function setInboundConfirmations(
+        uint16 _remoteChainId,
+        uint16 _confirmations
+    ) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
             _remoteChainId,
@@ -137,7 +194,10 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
     }
 
     // set outbound block confirmations
-    function setOutboundConfirmations(uint16 _remoteChainId, uint16 _confirmations) external {
+    function setOutboundConfirmations(
+        uint16 _remoteChainId,
+        uint16 _confirmations
+    ) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
             _remoteChainId,
@@ -148,5 +208,6 @@ contract SatelliteChain is Ownable, ILayerZeroReceiver, ILayerZeroUserApplicatio
 
     // allow this contract to receive ether
     fallback() external payable {}
+
     receive() external payable {}
 }

@@ -25,26 +25,49 @@ describe("LayerZero Concept", function () {
     this.masterChain = await MasterChain.deploy(
       this.lzEndpointMockMaster.address
     );
-    this.lzEndpointMockMaster.setDestLzEndpoint(
-      this.masterChain.address,
-      this.lzEndpointMockMaster.address
-    );
 
     const SatelliteChain = await ethers.getContractFactory("SatelliteChain");
     this.satelliteChain1 = await SatelliteChain.deploy(
-      this.lzEndpointMockSatellite1.address
-    );
-    this.lzEndpointMockSatellite1.setDestLzEndpoint(
-      this.satelliteChain1.address,
       this.lzEndpointMockSatellite1.address
     );
 
     this.satelliteChain2 = await SatelliteChain.deploy(
       this.lzEndpointMockSatellite2.address
     );
+
+    this.lzEndpointMockMaster.setDestLzEndpoint(
+      this.masterChain.address,
+      this.lzEndpointMockMaster.address
+    );
+
+    this.lzEndpointMockMaster.setDestLzEndpoint(
+      this.satelliteChain1.address,
+      this.lzEndpointMockSatellite1.address
+    );
+
+    this.lzEndpointMockMaster.setDestLzEndpoint(
+      this.satelliteChain2.address,
+      this.lzEndpointMockSatellite2.address
+    );
+
+    this.lzEndpointMockSatellite1.setDestLzEndpoint(
+      this.satelliteChain1.address,
+      this.lzEndpointMockSatellite1.address
+    );
+
+    this.lzEndpointMockSatellite1.setDestLzEndpoint(
+      this.masterChain.address,
+      this.lzEndpointMockMaster.address
+    );
+
     this.lzEndpointMockSatellite2.setDestLzEndpoint(
       this.satelliteChain2.address,
       this.lzEndpointMockSatellite2.address
+    );
+
+    this.lzEndpointMockSatellite2.setDestLzEndpoint(
+      this.masterChain.address,
+      this.lzEndpointMockMaster.address
     );
 
     // set each contracts remote address so it can send to each other
@@ -84,7 +107,7 @@ describe("LayerZero Concept", function () {
     );
 
     expect(await this.satelliteChain1.getCounter()).to.be.equal(10);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(-5);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(0);
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
@@ -100,6 +123,6 @@ describe("LayerZero Concept", function () {
     );
 
     expect(await this.satelliteChain1.getCounter()).to.be.equal(50);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(5);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(10);
   });
 });
