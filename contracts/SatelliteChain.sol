@@ -10,14 +10,11 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
-import "hardhat/console.sol";
-
 contract SatelliteChain is
     Ownable,
     ILayerZeroReceiver,
     ILayerZeroUserApplicationConfig
 {
-    using SafeMath for uint256;
     // keep track of how many messages have been received from other chains
     uint256 public counter;
     // required: the LayerZero endpoint which is passed in the constructor

@@ -3,14 +3,11 @@
 pragma solidity ^0.8.4;
 pragma abicoder v2;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/ILayerZeroReceiver.sol";
 import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
-
-import "hardhat/console.sol";
 
 contract MasterChain is
     Ownable,
@@ -18,7 +15,6 @@ contract MasterChain is
     ILayerZeroUserApplicationConfig,
     IPOCDeployment
 {
-    using SafeMath for uint256;
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
     mapping(uint16 => bytes) public remotes;
@@ -41,13 +37,13 @@ contract MasterChain is
         if (
             method.length == expectAdd.length &&
             keccak256(method) == keccak256(expectAdd)
-        ) amount = counters[_chainId].add(_amount);
+        ) amount = counters[_chainId] + _amount;
         else if (
             method.length == expectSub.length &&
             keccak256(method) == keccak256(expectSub) &&
             counters[_chainId] >= _amount
-        ) amount = counters[_chainId].sub(_amount);
-        else amount = counters[_chainId].mul(_amount);
+        ) amount = counters[_chainId] - _amount;
+        else amount = counters[_chainId] * _amount;
         endpoint.send{value: msg.value}(
             _chainId,
             _dstAddress,
@@ -99,67 +95,6 @@ contract MasterChain is
             "Invalid remote sender address. owner should call setRemote() to enable remote contract"
         );
         counters[_srcChainId] = toUint256(_payload);
-    }
-
-    // _adapterParams (v2)
-    // specify a small amount of notive token you want to airdropped to your wallet on destination
-    function incrementCounterWithAdapterParamsV2(
-        uint16 _dstChainId,
-        bytes calldata _dstCounterMockAddress,
-        uint256 gasAmountForDst,
-        uint256 airdropEthQty,
-        address airdropAddr
-    ) public payable {
-        uint16 version = 2;
-        bytes memory _adapterParams = abi.encodePacked(
-            version,
-            gasAmountForDst,
-            airdropEthQty, // how must dust to receive on destination
-            airdropAddr // the address to receive the dust
-        );
-        endpoint.send{value: msg.value}(
-            _dstChainId,
-            _dstCounterMockAddress,
-            bytes(""),
-            payable(msg.sender),
-            address(0x0),
-            _adapterParams
-        );
-    }
-
-    // call send() to multiple destinations in the same transaction!
-    function incrementMultiCounter(
-        uint16[] calldata _dstChainIds,
-        bytes[] calldata _dstCounterMockAddresses,
-        address payable _refundAddr
-    ) public payable {
-        require(
-            _dstChainIds.length == _dstCounterMockAddresses.length,
-            "_dstChainIds.length, _dstCounterMockAddresses.length not the same"
-        );
-
-        uint256 numberOfChains = _dstChainIds.length;
-
-        // note: could result in a few wei of dust left in contract
-        uint256 valueToSend = msg.value.div(numberOfChains);
-
-        // send() each chainId + dst address pair
-        for (uint256 i = 0; i < numberOfChains; ++i) {
-            // a Communicator.sol instance is the 'endpoint'
-            // .send() each payload to the destination chainId + UA destination address
-            endpoint.send{value: valueToSend}(
-                _dstChainIds[i],
-                _dstCounterMockAddresses[i],
-                bytes(""),
-                _refundAddr,
-                address(0x0),
-                bytes("")
-            );
-        }
-
-        // refund eth if too much was sent into this contract call
-        uint256 refund = msg.value.sub(valueToSend.mul(numberOfChains));
-        _refundAddr.transfer(refund);
     }
 
     function setConfig(

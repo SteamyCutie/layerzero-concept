@@ -107,7 +107,7 @@ describe("LayerZero Concept", function () {
     );
 
     expect(await this.satelliteChain1.getCounter()).to.be.equal(10);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(0);
+    expect(await this.satelliteChain2.getCounter()).to.be.equal(0); // Result is 0 as 0 is smaller than 5 and can't perform subtraction
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
