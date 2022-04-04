@@ -8,15 +8,12 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
-import "hardhat/console.sol";
-
 contract MasterChain is
     Ownable,
     ILayerZeroReceiver,
     ILayerZeroUserApplicationConfig,
     IPOCDeployment
 {
-    // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
     mapping(uint16 => bytes) public remotes;
     mapping(uint16 => int256) public counters;
@@ -47,9 +44,8 @@ contract MasterChain is
         else if (
             method.length == expectMul.length &&
             keccak256(method) == keccak256(expectMul)
-        ) {
-            amount = counters[_chainId] * _amount;
-        } else {}
+        ) amount = counters[_chainId] * _amount;
+        else amount = counters[_chainId];
 
         bytes memory _params = abi.encode("SET", _chainId, amount);
         endpoint.send{value: msg.value}(
@@ -90,9 +86,7 @@ contract MasterChain is
         uint64, /*_nonce*/
         bytes memory _payload
     ) external override {
-        // boilerplate: only allow this endpoint to be the caller of lzReceive!
         require(msg.sender == address(endpoint));
-        // owner must have setRemote() to allow its remote contracts to send to this contract
         require(
             _srcAddress.length == remotes[_srcChainId].length &&
                 keccak256(_srcAddress) == keccak256(remotes[_srcChainId]),
@@ -110,11 +104,6 @@ contract MasterChain is
         if (keccak256(bytes(method)) == keccak256(bytes("SET"))) {
             counters[_srcChainId] = amount;
         } else {
-            require(
-                dstAddress.length == remotes[chainId].length &&
-                    keccak256(dstAddress) == keccak256(remotes[chainId]),
-                "Invalid remote sender address. owner should call setRemote() to enable remote contract"
-            );
             sendCounter(_srcChainId, _srcAddress, chainId);
         }
     }
@@ -173,12 +162,12 @@ contract MasterChain is
 
     // set the Oracle to be used by this UA for LayerZero messages
     function setOracle(uint16 dstChainId, address oracle) external {
-        uint256 TYPE_ORACLE = 6; // from UltraLightNode
+        uint256 typeOracle = 6; // from UltraLightNode
         // set the Oracle
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
             dstChainId,
-            TYPE_ORACLE,
+            typeOracle,
             abi.encode(oracle)
         );
     }

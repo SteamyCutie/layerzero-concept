@@ -9,16 +9,12 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
-import "hardhat/console.sol";
-
 contract SatelliteChain is
     Ownable,
     ILayerZeroReceiver,
     ILayerZeroUserApplicationConfig
 {
-    // keep track of how many messages have been received from other chains
     mapping(uint16 => int256) public counters;
-    // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
 
     uint16 masterChainId;
@@ -77,9 +73,7 @@ contract SatelliteChain is
         uint64, /*_nonce*/
         bytes memory _payload
     ) external override {
-        // boilerplate: only allow this endpiont to be the caller of lzReceive!
         require(msg.sender == address(endpoint));
-        // owner must have setRemote() to allow its remote contracts to send to this contract
         require(
             _srcChainId == masterChainId &&
                 _srcAddress.length == masterAddress.length &&
