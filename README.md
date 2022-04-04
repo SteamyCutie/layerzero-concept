@@ -24,6 +24,39 @@ npx prettier '**/*.{json,sol,md}' --write
 npx solhint 'contracts/**/*.sol'
 npx solhint 'contracts/**/*.sol' --fix
 ```
+# Testing Counter Messages
+
+Deploying the MasterChain Contract
+```shell
+npx hardhat deploy --network rinkeby --tags MasterChain
+```
+
+Deploying the SatelliteChain Contract
+```shell
+npx hardhat deploy --network mumbai --tags SatelliteChain
+npx hardhat deploy --network fuji --tags SatelliteChain
+```
+
+Setting Remotes Each Other
+```shell
+npx hardhat --network rinkeby masterChainSetRemote --target-network mumbai
+npx hardhat --network rinkeby masterChainSetRemote --target-network fuji
+
+npx hardhat --network mumbai satelliteChainSetRemote --target-network rinkeby
+npx hardhat --network fuji satelliteChainSetRemote --target-network rinkeby
+```
+Modifying the Counter of SatelliteChain
+```shell
+npx hardhat --network rinkeby masterChainUpdateCounter --target-network mumbai --amount 10 --method ADD
+npx hardhat --network rinkeby masterChainUpdateCounter --target-network fuji --amount 5 --method SUB
+```
+Get the Counter of the Target SatelliteChain
+```shell
+npx hardhat --network mumbai satelliteChainPoll --target-network mumbai
+npx hardhat --network fuji satelliteChainPoll --target-network fuji
+npx hardhat --network mumbai satelliteChainPoll --target-network fuji
+npx hardhat --network fuji satelliteChainPoll --target-network mumbai
+```
 
 # Etherscan verification
 
