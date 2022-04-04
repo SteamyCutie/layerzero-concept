@@ -89,9 +89,13 @@ describe("LayerZero Concept", function () {
     );
   });
 
-  it("modify the counter of the destination SatelliteChain", async function () {
-    expect(await this.satelliteChain1.getCounter()).to.be.equal(0);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(0);
+  it("Modify the counter of SatelliteChains", async function () {
+    expect(
+      await this.satelliteChain1.getCounter(this.satelliteChain1Id)
+    ).to.be.equal(0);
+    expect(
+      await this.satelliteChain2.getCounter(this.satelliteChain2Id)
+    ).to.be.equal(0);
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
@@ -106,8 +110,12 @@ describe("LayerZero Concept", function () {
       "SUB"
     );
 
-    expect(await this.satelliteChain1.getCounter()).to.be.equal(10);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(0); // Result is 0 as 0 is smaller than 5 and can't perform subtraction
+    expect(
+      await this.satelliteChain1.getCounter(this.satelliteChain1Id)
+    ).to.be.equal(10);
+    expect(
+      await this.satelliteChain2.getCounter(this.satelliteChain2Id)
+    ).to.be.equal(-5);
 
     await this.masterChain.updateCounter(
       this.satelliteChain1Id,
@@ -119,10 +127,51 @@ describe("LayerZero Concept", function () {
       this.satelliteChain2Id,
       this.satelliteChain2.address,
       10,
-      "ADD"
+      "MUL"
     );
 
-    expect(await this.satelliteChain1.getCounter()).to.be.equal(50);
-    expect(await this.satelliteChain2.getCounter()).to.be.equal(10);
+    expect(
+      await this.satelliteChain1.getCounter(this.satelliteChain1Id)
+    ).to.be.equal(50);
+    expect(
+      await this.satelliteChain2.getCounter(this.satelliteChain2Id)
+    ).to.be.equal(-50);
+  });
+  it("Get Counter of another SatelliteChain on one SatelliteChain", async function () {
+    expect(
+      await this.satelliteChain1.getCounter(this.satelliteChain2Id)
+    ).to.be.equal(0);
+    expect(
+      await this.satelliteChain2.getCounter(this.satelliteChain1Id)
+    ).to.be.equal(0);
+
+    await this.masterChain.updateCounter(
+      this.satelliteChain1Id,
+      this.satelliteChain1.address,
+      10,
+      "ADD"
+    );
+    await this.masterChain.updateCounter(
+      this.satelliteChain2Id,
+      this.satelliteChain2.address,
+      5,
+      "SUB"
+    );
+
+    await this.satelliteChain1.requestCounter(
+      this.satelliteChain2Id,
+      this.satelliteChain2.address
+    );
+    await this.satelliteChain2.requestCounter(
+      this.satelliteChain1Id,
+      this.satelliteChain1.address
+    );
+
+    expect(
+      await this.satelliteChain1.getCounter(this.satelliteChain2Id)
+    ).to.be.equal(-5);
+    expect(
+      await this.satelliteChain2.getCounter(this.satelliteChain1Id)
+    ).to.be.equal(10);
   });
 });

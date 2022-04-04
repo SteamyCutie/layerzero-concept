@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.4;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -10,35 +9,40 @@ import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
 
+import "hardhat/console.sol";
+
 contract SatelliteChain is
     Ownable,
     ILayerZeroReceiver,
     ILayerZeroUserApplicationConfig
 {
     // keep track of how many messages have been received from other chains
-    uint256 public counter;
+    mapping(uint16 => int256) public counters;
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
 
-    uint16 remoteChainId;
-    bytes remoteAddress;
+    uint16 masterChainId;
+    bytes masterAddress;
 
     constructor(address _endpoint) {
         endpoint = ILayerZeroEndpoint(_endpoint);
     }
 
-    function getCounter() public view returns (uint256) {
-        return counter;
+    function getCounter(uint16 chainId) public view returns (int256) {
+        return counters[chainId];
     }
 
-    function sendCounter(uint16 _remoteChainId, bytes memory _remoteAddress)
-        public
-        payable
-    {
+    function sendCounter() public payable {
+        bytes memory _params = abi.encode(
+            "SET",
+            uint16(0),
+            bytes(""),
+            counters[endpoint.getChainId()]
+        );
         endpoint.send{value: msg.value}(
-            _remoteChainId,
-            _remoteAddress,
-            abi.encodePacked(counter),
+            masterChainId,
+            masterAddress,
+            _params,
             payable(msg.sender),
             address(0x0),
             bytes("")
@@ -49,23 +53,20 @@ contract SatelliteChain is
         external
         payable
     {
-        endpoint.send{value: msg.value}(
+        bytes memory _params = abi.encode(
+            "GET",
             _chainId,
             _dstAddress,
-            bytes(""),
+            int256(0)
+        );
+        endpoint.send{value: msg.value}(
+            masterChainId,
+            masterAddress,
+            _params,
             payable(msg.sender),
             address(0x0),
-            bytes("COUNTER")
+            bytes("")
         );
-    }
-
-    function toUint256(bytes memory _bytes) internal pure returns (uint256) {
-        require(_bytes.length >= 32, "toUint256_outOfBounds");
-        uint256 tempUint;
-        assembly {
-            tempUint := mload(add(_bytes, 0x20))
-        }
-        return tempUint;
     }
 
     // overrides lzReceive function in ILayerZeroReceiver.
@@ -80,20 +81,22 @@ contract SatelliteChain is
         require(msg.sender == address(endpoint));
         // owner must have setRemote() to allow its remote contracts to send to this contract
         require(
-            _srcChainId == remoteChainId &&
-                _srcAddress.length == remoteAddress.length &&
-                keccak256(_srcAddress) == keccak256(remoteAddress),
+            _srcChainId == masterChainId &&
+                _srcAddress.length == masterAddress.length &&
+                keccak256(_srcAddress) == keccak256(masterAddress),
             "Invalid remote sender address. owner should call setRemote() to enable remote contract"
         );
-        bytes memory expect = bytes("COUNTER");
-        if (
-            _payload.length == expect.length &&
-            keccak256(_payload) == keccak256(expect)
-        ) sendCounter(remoteChainId, remoteAddress);
-        else {
-            counter = toUint256(_payload);
-            sendCounter(remoteChainId, remoteAddress);
+        string memory method;
+        uint16 chainId;
+        int256 amount;
+        (method, chainId, amount) = abi.decode(
+            _payload,
+            (string, uint16, int256)
+        );
+        if (keccak256(bytes(method)) == keccak256(bytes("SET"))) {
+            counters[chainId] = amount;
         }
+        sendCounter();
     }
 
     function setConfig(
@@ -161,30 +164,30 @@ contract SatelliteChain is
     }
 
     // _chainId - the chainId for the remote contract
-    // _remoteAddress - the contract address on the remote chainId
+    // _masterAddress - the contract address on the remote chainId
     // the owner must set remote contract addresses.
     // in lzReceive(), a require() ensures only messages
     // from known contracts can be received.
-    function setRemote(uint16 _chainId, bytes calldata _remoteAddress)
+    function setRemote(uint16 _chainId, bytes calldata _masterAddress)
         external
         onlyOwner
     {
         require(
-            remoteAddress.length == 0,
+            masterAddress.length == 0,
             "The remote address has already been set for the chainId!"
         );
-        remoteChainId = _chainId;
-        remoteAddress = _remoteAddress;
+        masterChainId = _chainId;
+        masterAddress = _masterAddress;
     }
 
     // set the inbound block confirmations
     function setInboundConfirmations(
-        uint16 _remoteChainId,
+        uint16 _masterChainId,
         uint16 _confirmations
     ) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
-            _remoteChainId,
+            _masterChainId,
             2, // CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS
             abi.encode(_confirmations)
         );
@@ -192,12 +195,12 @@ contract SatelliteChain is
 
     // set outbound block confirmations
     function setOutboundConfirmations(
-        uint16 _remoteChainId,
+        uint16 _masterChainId,
         uint16 _confirmations
     ) external {
         endpoint.setConfig(
             endpoint.getSendVersion(address(this)),
-            _remoteChainId,
+            _masterChainId,
             5, // CONFIG_TYPE_OUTBOUND_BLOCK_CONFIRMATIONS
             abi.encode(_confirmations)
         );

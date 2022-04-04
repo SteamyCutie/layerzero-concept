@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.4;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/ILayerZeroReceiver.sol";
 import "./interfaces/ILayerZeroEndpoint.sol";
 import "./interfaces/ILayerZeroUserApplicationConfig.sol";
 import "./interfaces/IPOCDeployment.sol";
+
+import "hardhat/console.sol";
 
 contract MasterChain is
     Ownable,
@@ -18,7 +19,7 @@ contract MasterChain is
     // required: the LayerZero endpoint which is passed in the constructor
     ILayerZeroEndpoint public endpoint;
     mapping(uint16 => bytes) public remotes;
-    mapping(uint16 => uint256) public counters;
+    mapping(uint16 => int256) public counters;
 
     constructor(address _endpoint) {
         endpoint = ILayerZeroEndpoint(_endpoint);
@@ -27,55 +28,58 @@ contract MasterChain is
     function updateCounter(
         uint16 _chainId,
         bytes memory _dstAddress,
-        uint256 _amount,
+        int256 _amount,
         string memory _method
     ) external payable override {
-        uint256 amount;
+        int256 amount;
         bytes memory method = bytes(_method);
         bytes memory expectAdd = bytes("ADD");
         bytes memory expectSub = bytes("SUB");
+        bytes memory expectMul = bytes("MUL");
         if (
             method.length == expectAdd.length &&
             keccak256(method) == keccak256(expectAdd)
         ) amount = counters[_chainId] + _amount;
         else if (
             method.length == expectSub.length &&
-            keccak256(method) == keccak256(expectSub) &&
-            counters[_chainId] >= _amount
+            keccak256(method) == keccak256(expectSub)
         ) amount = counters[_chainId] - _amount;
-        else amount = counters[_chainId] * _amount;
+        else if (
+            method.length == expectMul.length &&
+            keccak256(method) == keccak256(expectMul)
+        ) {
+            amount = counters[_chainId] * _amount;
+        } else {}
+
+        bytes memory _params = abi.encode("SET", _chainId, amount);
         endpoint.send{value: msg.value}(
             _chainId,
             _dstAddress,
-            abi.encodePacked(amount),
+            _params,
             payable(msg.sender),
             address(0x0),
             bytes("")
         );
     }
 
-    function requestCounter(uint16 _chainId, bytes memory _dstAddress)
-        external
-        payable
-        override
-    {
+    function sendCounter(
+        uint16 _dstChainId,
+        bytes memory _dstAddress,
+        uint16 _srcChainId
+    ) public payable override {
+        bytes memory _params = abi.encode(
+            "SET",
+            _srcChainId,
+            counters[_srcChainId]
+        );
         endpoint.send{value: msg.value}(
-            _chainId,
+            _dstChainId,
             _dstAddress,
-            bytes(""),
+            _params,
             payable(msg.sender),
             address(0x0),
-            bytes("COUNTER")
+            bytes("")
         );
-    }
-
-    function toUint256(bytes memory _bytes) internal pure returns (uint256) {
-        require(_bytes.length >= 32, "toUint256_outOfBounds");
-        uint256 tempUint;
-        assembly {
-            tempUint := mload(add(_bytes, 0x20))
-        }
-        return tempUint;
     }
 
     // overrides lzReceive function in ILayerZeroReceiver.
@@ -94,7 +98,25 @@ contract MasterChain is
                 keccak256(_srcAddress) == keccak256(remotes[_srcChainId]),
             "Invalid remote sender address. owner should call setRemote() to enable remote contract"
         );
-        counters[_srcChainId] = toUint256(_payload);
+        string memory method;
+        uint16 chainId;
+        bytes memory dstAddress;
+        int256 amount;
+        (method, chainId, dstAddress, amount) = abi.decode(
+            _payload,
+            (string, uint16, bytes, int256)
+        );
+
+        if (keccak256(bytes(method)) == keccak256(bytes("SET"))) {
+            counters[_srcChainId] = amount;
+        } else {
+            require(
+                dstAddress.length == remotes[chainId].length &&
+                    keccak256(dstAddress) == keccak256(remotes[chainId]),
+                "Invalid remote sender address. owner should call setRemote() to enable remote contract"
+            );
+            sendCounter(_srcChainId, _srcAddress, chainId);
+        }
     }
 
     function setConfig(
@@ -175,6 +197,7 @@ contract MasterChain is
             "The remote address has already been set for the chainId!"
         );
         remotes[_chainId] = _remoteAddress;
+        counters[_chainId] = 0;
     }
 
     // set the inbound block confirmations
